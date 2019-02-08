@@ -13,6 +13,8 @@ class BitWidth:
   BIT_WIDTH_32 = 2
   BIT_WIDTH_64 = 3
 
+byte_widths = [1, 2, 4, 8]
+
 # These are used as the upper 6 bits of a type field to indicate the actual
 # type.
 class FlexBufferType:
@@ -27,46 +29,62 @@ class FlexBufferType:
   FBT_INDIRECT_UINT = 7
   FBT_INDIRECT_FLOAT = 8
   FBT_MAP = 9
-  FBT_VECTOR = 10,      # Untyped.
-  FBT_VECTOR_INT = 11,  # Typed any size (stores no type table).
+  FBT_VECTOR = 10      # Untyped.
+  FBT_VECTOR_INT = 11  # Typed any size (stores no type table).
   FBT_VECTOR_UINT = 12
   FBT_VECTOR_FLOAT = 13
   FBT_VECTOR_KEY = 14
   FBT_VECTOR_STRING = 15
-  FBT_VECTOR_INT2 = 16,  # Typed tuple (no type table, no size field).
+  FBT_VECTOR_INT2 = 16  # Typed tuple (no type table, no size field).
   FBT_VECTOR_UINT2 = 17
   FBT_VECTOR_FLOAT2 = 18
-  FBT_VECTOR_INT3 = 19,  # Typed triple (no type table, no size field).
+  FBT_VECTOR_INT3 = 19  # Typed triple (no type table, no size field).
   FBT_VECTOR_UINT3 = 20
   FBT_VECTOR_FLOAT3 = 21
-  FBT_VECTOR_INT4 = 22,  # Typed quad (no type table, no size field).
+  FBT_VECTOR_INT4 = 22  # Typed quad (no type table, no size field).
   FBT_VECTOR_UINT4 = 23
   FBT_VECTOR_FLOAT4 = 24
   FBT_BLOB = 25
   FBT_BOOL = 26
-  FBT_VECTOR_BOOL = 36,  # To Allow the same type of conversion of type to vector type
+  FBT_VECTOR_BOOL = 36  # To Allow the same type of conversion of type to vector type
 
 def decode_type(buf, t: FlexBufferType):
-    bit_width = t & 0x3
+    byte_width = t & 0x3
     t = t >> 2
     if t == FlexBufferType.FBT_NULL:
         return b'0'
     if t == FlexBufferType.FBT_BOOL:
         return struct.unpack(f'<B', buf)[0]
     if t == FlexBufferType.FBT_INT:
-        fmt_char = ['b', 'h', 'i', 'l'][bit_width]
+        fmt_char = ['b', 'h', 'i', 'l'][byte_width]
         return struct.unpack(f'<{fmt_char}', buf)[0]
     if t == FlexBufferType.FBT_UINT:
-        fmt_char = ['B', 'H', 'I', 'L'][bit_width]
+        fmt_char = ['B', 'H', 'I', 'L'][byte_width]
         return struct.unpack(f'<{fmt_char}', buf)[0]
     if t == FlexBufferType.FBT_FLOAT:
-        assert bit_width >= 2
-        fmt_char = ['f', 'f', 'f', 'd'][bit_width]
+        assert byte_width >= 2
+        fmt_char = ['f', 'f', 'f', 'd'][byte_width]
         return struct.unpack(f'<{fmt_char}', buf)[0]
+    if t == FlexBufferType.FBT_VECTOR:
+        size = struct.unpack(f'<b', buf[:1])[0]
+        type_bytes = buf[-size:]
+        off = 1
+        vec = []
+        for i in range(size):
+            num_bytes = byte_widths[type_bytes[i] & 0x3]
+            vec.append(decode_type(buf[off:off+num_bytes], type_bytes[i]))
+            off += num_bytes
+        return vec
     raise "unknown type"
+
+def is_vector(t: FlexBufferType) -> bool:
+    t = t >> 2
+    return t >= FlexBufferType.FBT_VECTOR and t <= FlexBufferType.FBT_VECTOR_FLOAT4
 
 def decode(buffer):
     root_width = struct.unpack('B', buffer[-1:])[0]
-    off = 1 + root_width
-    root_type = struct.unpack('B', buffer[-off:-1])[0]
-    return decode_type(buffer[:-off], root_type)
+    root_type = struct.unpack('B', buffer[-2:-1])[0]
+    off = root_width + 2  # 2 bytes read above
+    if is_vector(root_type):
+        off += 1  # to include the size byte
+    return decode_type(buffer[-off:-2], root_type)
