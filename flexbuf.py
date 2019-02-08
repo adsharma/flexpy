@@ -1,6 +1,7 @@
 # Flexbuffer decoder in python
 
 import struct
+from typing import Any, List, Optional
 
 #
 # Some constants from flexbuffer.h
@@ -48,9 +49,37 @@ class FlexBufferType:
   FBT_BOOL = 26
   FBT_VECTOR_BOOL = 36  # To Allow the same type of conversion of type to vector type
 
-def decode_type(buf, t: FlexBufferType):
-    byte_width = t & 0x3
+def decode_vec(buf) -> List:
+    size = struct.unpack(f'<b', buf[:1])[0]
+    type_bytes = buf[-size:]
+    off = 1
+    vec = []
+    for i in range(size):
+        num_bytes = byte_widths[type_bytes[i] & 0x3]
+        vec.append(decode_type(buf[off:off+num_bytes], 0, None, type_bytes[i]))
+        off += num_bytes
+    return vec
+
+def decode_key_string(buf, off: int) -> str:
+    """Decodes a byte array at buf[off:] into string, stripping off null terminator"""
+    i = buf[off:].find(b'\0')
+    if i == -1:
+        return buf[off:]
+    return buf[off:off+i].decode('utf-8')
+
+def is_vector(t: FlexBufferType) -> bool:
     t = t >> 2
+    return t >= FlexBufferType.FBT_VECTOR and t <= FlexBufferType.FBT_VECTOR_FLOAT4 or t == FlexBufferType.FBT_MAP
+
+def is_inline_type(t: FlexBufferType) -> bool:
+    t = t >> 2
+    return t in {FlexBufferType.FBT_INT, FlexBufferType.FBT_UINT, FlexBufferType.FBT_FLOAT, FlexBufferType.FBT_BOOL, FlexBufferType.FBT_NULL}
+
+def decode_type(orig_buf, off: int, byte_width: Optional[int], t: FlexBufferType) -> Any:
+    if byte_width is None and is_inline_type(t):
+        byte_width = t & 0x3
+    t = t >> 2
+    buf = orig_buf
     if t == FlexBufferType.FBT_NULL:
         return b'0'
     if t == FlexBufferType.FBT_BOOL:
@@ -66,20 +95,30 @@ def decode_type(buf, t: FlexBufferType):
         fmt_char = ['f', 'f', 'f', 'd'][byte_width]
         return struct.unpack(f'<{fmt_char}', buf)[0]
     if t == FlexBufferType.FBT_VECTOR:
-        size = struct.unpack(f'<b', buf[:1])[0]
-        type_bytes = buf[-size:]
-        off = 1
+        return decode_vec(buf)
+    if t == FlexBufferType.FBT_KEY:
+        return decode_vec(buf)
+    if t == FlexBufferType.FBT_VECTOR_KEY:
+        size = buf[-off-1]
         vec = []
         for i in range(size):
-            num_bytes = byte_widths[type_bytes[i] & 0x3]
-            vec.append(decode_type(buf[off:off+num_bytes], type_bytes[i]))
-            off += num_bytes
+            elem_off = -off + i
+            relative_off = buf[elem_off]
+            vec.append(decode_key_string(buf, elem_off - relative_off))
         return vec
+    if t == FlexBufferType.FBT_MAP:
+        off -= 2  # correct for the +2 in decode()
+        buf = orig_buf[-off:]
+        value_vec = decode_vec(buf)
+        buf = orig_buf[:-off]
+        # Decode offset to key vec and width
+        byte_width = buf[-1]
+        off = int(buf[-2])
+        buf = buf[:-2]
+        key_vec = decode_type(buf, off, byte_width, FlexBufferType.FBT_VECTOR_KEY << 2)
+        d = dict(zip(key_vec, value_vec))
+        return d
     raise "unknown type"
-
-def is_vector(t: FlexBufferType) -> bool:
-    t = t >> 2
-    return t >= FlexBufferType.FBT_VECTOR and t <= FlexBufferType.FBT_VECTOR_FLOAT4
 
 def decode(buffer):
     root_width = struct.unpack('B', buffer[-1:])[0]
@@ -87,4 +126,4 @@ def decode(buffer):
     off = root_width + 2  # 2 bytes read above
     if is_vector(root_type):
         off += 1  # to include the size byte
-    return decode_type(buffer[-off:-2], root_type)
+    return decode_type(buffer[:-2], off, None, root_type)

@@ -18,6 +18,19 @@ class FlexBufTest(unittest.TestCase):
     def test_vec(self):
         self.assertEqual(flexbuf.decode(bytearray([3, 1, 2, 3, 4, 4, 4, FlexBufferType.FBT_VECTOR << 2, 6])), [1, 2, 3])
 
+    def test_map(self):
+        # Example from the documentation
+        tmap = b'bar' + bytearray([0]) + b'foo' + bytearray([0])
+        tmap += bytearray([2])  # key vec size
+        tmap += bytearray([9, 6])  # offset to bar and foo
+        tmap += bytearray([2, 1])  # offset to key vec and byte width
+        tmap += bytearray([2])  # value vec size
+        # value vec points here
+        value_vec = bytearray([14, 13])  # values
+        value_vec += bytearray([4, 4])  # types of values
+        tmap += value_vec
+        self.assertEqual(flexbuf.decode(tmap + bytearray([FlexBufferType.FBT_MAP << 2, len(value_vec)])), { 'foo' : 13, 'bar': 14 })
+
 
 if __name__ == '__main__':
     unittest.main()
