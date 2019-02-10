@@ -3,6 +3,7 @@ import unittest
 import struct
 
 FlexBufferType = flexbuf.FlexBufferType
+BitWidth = flexbuf.BitWidth
 
 class FlexBufTest(unittest.TestCase):
     def test_int(self):
@@ -11,6 +12,12 @@ class FlexBufTest(unittest.TestCase):
 
     def test_uint(self):
         self.assertEqual(flexbuf.decode(bytearray([13, 8, 1])), 13)
+
+    def test_float(self):
+        test_float = -3.14
+        bytes = struct.pack('<f', test_float)
+        type_byte = FlexBufferType.FBT_FLOAT << 2 |  BitWidth.BIT_WIDTH_32
+        self.assertAlmostEqual(flexbuf.decode(bytes + bytearray([type_byte, len(bytes) + 2])), test_float, places=5)
 
     def test_null(self):
         self.assertEqual(flexbuf.decode(bytearray([0, 0, 1])), b'0')
