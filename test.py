@@ -25,6 +25,33 @@ class FlexBufTest(unittest.TestCase):
     def test_vec(self):
         self.assertEqual(flexbuf.decode(bytearray([3, 1, 2, 3, 4, 4, 4, FlexBufferType.FBT_VECTOR << 2, 6])), [1, 2, 3])
 
+    def test_string(self):
+        tstring = b'foo' + bytearray([0])
+        bytes = bytearray([len(tstring)]) + tstring
+        type_byte = FlexBufferType.FBT_STRING << 2
+        self.assertEqual(flexbuf.decode(bytes + bytearray([type_byte, len(tstring)])), 'foo')
+
+    def test_int1_vec(self):
+        self.assertEqual(flexbuf.decode(bytearray([3, 1, 2, 3, FlexBufferType.FBT_VECTOR_INT << 2, 3])), [1, 2, 3])
+
+    def test_int2_vec(self):
+        type_byte = FlexBufferType.FBT_VECTOR_INT << 2 |  BitWidth.BIT_WIDTH_16
+        bytes = bytearray()
+        vec = [1001, 1002, 1003]
+        for v in vec:
+            bytes += struct.pack('<h', v)
+        self.assertEqual(flexbuf.decode(bytearray([3]) + bytes + bytearray([type_byte, 6])), [1001, 1002, 1003])
+
+    def test_string_vec(self):
+        type_byte = FlexBufferType.FBT_VECTOR_STRING << 2
+        bytes = bytearray()
+        vec = ['apples', 'oranges', 'peaches']
+        for v in vec:
+            bytes += bytearray([len(v) + 1])
+            bytes += v.encode('utf-8')
+            bytes += b'\0'
+        self.assertEqual(flexbuf.decode(bytearray([3]) + bytes + bytearray([type_byte, len(bytes)])), vec)
+
     def test_map(self):
         # Example from the documentation
         tmap = b'bar' + bytearray([0]) + b'foo' + bytearray([0])
