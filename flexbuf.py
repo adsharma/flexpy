@@ -182,7 +182,10 @@ def decode_type(
         fmt_char = ["f", "f", "f", "d"][bit_width]
         return struct.unpack(f"<{fmt_char}", buf)[0]
     if t == FlexBufferType.FBT_VECTOR:
-        return decode_typed_vec(buf)
+        off = buf[-1]
+        # off is relative to buf[-1]. We need another -1 to
+        # include the size byte, so we end up with -off-2
+        return decode_typed_vec(buf[-off - 1 - 1 : -1])
     if t == FlexBufferType.FBT_VECTOR_KEY:
         size = buf[-off - 1]
         vec = []

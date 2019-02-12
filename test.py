@@ -5,7 +5,27 @@ import struct
 FlexBufferType = flexbuf.FlexBufferType
 BitWidth = flexbuf.BitWidth
 
-
+# Compare against the reference C++ implementation
+#
+# #include "flatbuffers/flexbuffers.h"
+#
+# int main(int /*argc*/, const char * /*argv*/ []) {
+#   flexbuffers::Builder flexbuild;
+#   // flexbuild.Int(13);
+#   // flexbuild.String("foo");
+#   uint8_t ints[] = { 1, 2, 3 };
+#   flexbuild.Vector(ints, 3);
+#   // flexbuild.Vector([&]() {
+#   //   flexbuild += 1;
+#   //   flexbuild += 2;
+#   //   flexbuild += 3;
+#   // });
+#   flexbuild.Finish();
+#   auto buf = flexbuild.GetBuffer();
+#   for (auto i: buf)
+#     printf("%x ", i);
+#   printf("\n");
+# }
 class FlexBufTest(unittest.TestCase):
     def test_int(self):
         minus_13 = struct.pack("b", -13)
@@ -30,7 +50,7 @@ class FlexBufTest(unittest.TestCase):
     def test_vec(self):
         self.assertEqual(
             flexbuf.decode(
-                bytearray([3, 1, 2, 3, 4, 4, 4, FlexBufferType.FBT_VECTOR << 2, 6])
+                bytearray([3, 1, 2, 3, 4, 4, 4, 6, FlexBufferType.FBT_VECTOR << 2, 1])
             ),
             [1, 2, 3],
         )
