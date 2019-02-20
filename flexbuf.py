@@ -2,13 +2,15 @@
 
 import struct
 from typing import Any, List, Optional
+from enum import IntEnum
+
 
 #
 # Some constants from flexbuffer.h
 #
 # These are used in the lower 2 bits of a type field to determine the size of
 # the elements (and or size field) of the item pointed to (e.g. vector).
-class BitWidth:
+class BitWidth(IntEnum):
     BIT_WIDTH_8 = 0
     BIT_WIDTH_16 = 1
     BIT_WIDTH_32 = 2
@@ -17,9 +19,10 @@ class BitWidth:
 
 byte_widths = [1, 2, 4, 8]
 
+
 # These are used as the upper 6 bits of a type field to indicate the actual
 # type.
-class FlexBufferType:
+class FlexBufferType(IntEnum):
     FBT_NULL = 0
     FBT_INT = 1
     FBT_UINT = 2
@@ -58,7 +61,7 @@ def decode_typed_vec(buf) -> List:
     vec = []
     for i in range(size):
         num_bytes = byte_widths[type_bytes[i] & 0x3]
-        vec.append(decode_type(buf[off : off + num_bytes], 0, None, type_bytes[i]))
+        vec.append(decode_type(buf[off: off + num_bytes], 0, None, type_bytes[i]))
         off += num_bytes
     return vec
 
@@ -82,14 +85,17 @@ def decode_untyped_vec(buf, size: int, bit_width: BitWidth, t: FlexBufferType) -
         bit_width = BitWidth.BIT_WIDTH_8
     vec = []
     scalar_type = scalarify(t)
-    for i in range(size):
+    for _ in range(size):
         if scalar_type == FlexBufferType.FBT_STRING:
             num_bytes = buf[off] + 1  # For the size byte
         else:
             num_bytes = byte_widths[bit_width]
         vec.append(
             decode_type(
-                buf[off : off + num_bytes], 0, None, scalar_type << 2 | bit_width
+                buf[off: off + num_bytes],
+                0,
+                None,
+                FlexBufferType(scalar_type << 2 | bit_width),
             )
         )
         off += num_bytes
@@ -101,7 +107,7 @@ def decode_key_string(buf, off: int) -> str:
     i = buf[off:].find(b"\0")
     if i == -1:
         return buf[off:]
-    return buf[off : off + i].decode("utf-8")
+    return buf[off: off + i].decode("utf-8")
 
 
 def element_width(t: FlexBufferType, bit_width: BitWidth) -> int:
@@ -115,13 +121,13 @@ def element_width(t: FlexBufferType, bit_width: BitWidth) -> int:
     }
     if t in widths:
         return widths[t] or 1 << bit_width
-    raise "unknown type"
+    raise Exception("unknown type")
 
 
 def decode_offset_type(buf, off: int, bit_width: BitWidth, t: FlexBufferType) -> Any:
     size = buf[-off]
     num_bytes = size * element_width(t, bit_width)
-    buf = buf[-off + 1 :]
+    buf = buf[-off + 1:]
     if t != FlexBufferType.FBT_VECTOR_STRING:
         assert len(buf) == num_bytes
     if t == FlexBufferType.FBT_STRING:
@@ -161,11 +167,15 @@ def has_size_field(t: FlexBufferType) -> bool:
 
 
 def decode_type(
-    orig_buf, off: int, bit_width: Optional[BitWidth], t: FlexBufferType
+    orig_buf, off: int, input_bit_width: Optional[BitWidth], input_t: int
 ) -> Any:
-    if bit_width is None and has_size_field(t >> 2):
-        bit_width = t & 0x3
-    t = t >> 2
+    if input_bit_width is None and has_size_field(FlexBufferType(input_t >> 2)):
+        bit_width = BitWidth(input_t & 0x3)
+    elif input_bit_width is not None:
+        bit_width = BitWidth(input_bit_width)
+    else:
+        bit_width = BitWidth.BIT_WIDTH_8
+    t = FlexBufferType(input_t >> 2)
     buf = orig_buf
     if t == FlexBufferType.FBT_NULL:
         return b"0"
@@ -185,7 +195,7 @@ def decode_type(
         off = buf[-1]
         # off is relative to buf[-1]. We need another -1 to
         # include the size byte, so we end up with -off-2
-        return decode_typed_vec(buf[-off - 1 - 1 : -1])
+        return decode_typed_vec(buf[-off - 1 - 1: -1])
     if t == FlexBufferType.FBT_VECTOR_KEY:
         size = buf[-off - 1]
         vec = []
@@ -207,7 +217,7 @@ def decode_type(
         return d
     if is_offset_type(t):
         return decode_offset_type(buf, off, bit_width, t)
-    raise "unknown type"
+    raise Exception("unknown type")
 
 
 def decode(buffer):

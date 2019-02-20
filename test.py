@@ -5,6 +5,7 @@ import struct
 FlexBufferType = flexbuf.FlexBufferType
 BitWidth = flexbuf.BitWidth
 
+
 # Compare against the reference C++ implementation
 #
 # #include "flatbuffers/flexbuffers.h"
